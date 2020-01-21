@@ -96,7 +96,7 @@ def loss_function_PS(recon_x, x):
     BCE = F.binary_cross_entropy(recon_x, x)
     return BCE
 
-def calc_ATT_IPW(X_train_scaled, T_train, Y_train, X_test_scaled, T_test, Y_test, datasetNum, scaler, X, T, Y):
+def calc_ATT_IPW(X_train_scaled, T_train, Y_train, X_test_scaled, T_test, Y_test, datasetNum, scaler, X, T, Y, lowPsTh):
     X_train_scaled, T_train, Y_train = torch.tensor(X_train_scaled, dtype=torch.float), torch.tensor(T_train, dtype=torch.float), torch.tensor(Y_train, dtype=torch.float)
     X_test_scaled, T_test, Y_test = torch.tensor(X_test_scaled, dtype=torch.float), torch.tensor(T_test, dtype=torch.float), torch.tensor(Y_test, dtype=torch.float)
     nTrainSamples = X_train_scaled.shape[0]
@@ -182,9 +182,9 @@ def calc_ATT_IPW(X_train_scaled, T_train, Y_train, X_test_scaled, T_test, Y_test
     model_PS.load_state_dict(torch.load('./PS%d.pt' % datasetNum))
     model_PS.eval()
 
-
     # let's see the histogram of propensity score in the treated and control groups:
     X_scaled = scaler.transform(X)
+    ps_scores = model_PS(torch.tensor(X_scaled, dtype=torch.float).cuda()).detach().cpu().numpy()
     X_scaled_treated, Y_treated = X_scaled[np.where(T)], Y[np.where(T)]
     X_scaled_control, Y_control = X_scaled[np.where(T==0)], Y[np.where(T==0)]
     PS_treated, PS_control = model_PS(torch.tensor(X_scaled_treated, dtype=torch.float).cuda()), model_PS(torch.tensor(X_scaled_control, dtype=torch.float).cuda())
@@ -208,10 +208,6 @@ def calc_ATT_IPW(X_train_scaled, T_train, Y_train, X_test_scaled, T_test, Y_test
     plt.close()
     #plt.show()
 
-    # from the histogram it seems that for overlap we should only keep the patients whose propensity score is above 0.3:
-    if datasetNum == 1:
-        lowPsTh = 0.33
-
     X_scaled_treated, Y_treated = X_scaled_treated[np.where(PS_treated > lowPsTh)], Y_treated[np.where(PS_treated > lowPsTh)]
     X_scaled_control, Y_control = X_scaled_control[np.where(PS_control > lowPsTh)], Y_control[np.where(PS_control > lowPsTh)]
     PS_treated, PS_control = model_PS(torch.tensor(X_scaled_treated, dtype=torch.float).cuda()), model_PS(torch.tensor(X_scaled_control, dtype=torch.float).cuda())
@@ -232,10 +228,10 @@ def calc_ATT_IPW(X_train_scaled, T_train, Y_train, X_test_scaled, T_test, Y_test
     meanOutcome_control = (Y_control * controlPsFactor).sum() / controlPsFactor.sum()
 
     mu_ATT_IPW = meanOutcome_treated - meanOutcome_control
-    return mu_ATT_IPW
+    return mu_ATT_IPW, ps_scores
 
 ########################################## matching #######################################################
-def calc_ATT_matching(datasetNum, scaler, X, T, Y):
+def calc_ATT_matching(datasetNum, scaler, X, T, Y, matchingMahalanobisThr):
     X_scaled = scaler.transform(X)
     X_scaled_treated, Y_treated = X_scaled[np.where(T)], Y[np.where(T)]
     X_scaled_control, Y_control = X_scaled[np.where(T == 0)], Y[np.where(T == 0)]
@@ -270,10 +266,6 @@ def calc_ATT_matching(datasetNum, scaler, X, T, Y):
     plt.savefig('Closest_Mahalanobis_distances_CDF_dataset%d' % datasetNum)
     plt.close()
     #plt.show()
-
-    # for good matching let's match only on the treated that has a control match with a mahalanibis dist smaller than 7.5. We remain with about 80% of treated patients:
-    if datasetNum == 1:
-        matchingMahalanobisThr = 7.5
 
     treatedPairs = treatedPairs[np.where(treatedPairs[:, -1] < matchingMahalanobisThr)]
     treatedIndexes = treatedPairs[:, 0].astype('int')
@@ -331,7 +323,7 @@ def calc_ATT_sLearner(X_train_scaled, X_test_scaled, T_test, Y_test, T_train, Y_
     else:
         lr_scheduler = getattr(torch.optim.lr_scheduler, lr_name)(optimizer, **lr_args)
 
-    nEpochs = 1000 + 1
+    nEpochs = 200 + 1
     trainLoss, trainProbLoss, testLoss, testProbLoss = np.zeros(nEpochs), np.zeros(nEpochs), np.zeros(nEpochs), np.zeros(nEpochs)
     X_test_scaled, T_test, Y_test = torch.tensor(X_test_scaled, dtype=torch.float).cuda(), torch.tensor(T_test, dtype=torch.float).unsqueeze_(-1).cuda(), torch.tensor(Y_test, dtype=torch.float).cuda()
     X_train_scaled, T_train, Y_train = torch.tensor(X_train_scaled, dtype=torch.float).cuda(), torch.tensor(T_train, dtype=torch.float).unsqueeze_(-1).cuda(), torch.tensor(Y_train, dtype=torch.float).cuda()
@@ -431,7 +423,7 @@ def calc_ATT_tLearner(scaler, X_train_scaled, T_train, T_test, X_test_scaled, Y_
     else:
         lr_scheduler = getattr(torch.optim.lr_scheduler, lr_name)(optimizer, **lr_args)
 
-    nEpochs = 1000 + 1
+    nEpochs = 200 + 1
     trainLoss, trainProbLoss, testLoss, testProbLoss = np.zeros(nEpochs), np.zeros(nEpochs), np.zeros(
         nEpochs), np.zeros(nEpochs)
 
@@ -520,7 +512,7 @@ def calc_ATT_tLearner(scaler, X_train_scaled, T_train, T_test, X_test_scaled, Y_
     else:
         lr_scheduler = getattr(torch.optim.lr_scheduler, lr_name)(optimizer, **lr_args)
 
-    nEpochs = 1000 + 1
+    nEpochs = 200 + 1
     trainLoss, trainProbLoss, testLoss, testProbLoss = np.zeros(nEpochs), np.zeros(nEpochs), np.zeros(nEpochs), np.zeros(nEpochs)
 
     X_test_scaled_control, T_test_control, Y_test_control = torch.tensor(X_test_scaled[controlIndexes_test], dtype=torch.float).cuda(), torch.tensor(T_test[controlIndexes_test], dtype=torch.float).unsqueeze_(-1).cuda(), torch.tensor(Y_test[controlIndexes_test], dtype=torch.float).cuda()
