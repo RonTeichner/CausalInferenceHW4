@@ -18,12 +18,13 @@ enable_S_learner = True
 enable_T_learner = True
 
 datasetNums = [1, 2]
-nIters = 3
+nIters = 30
 
 dataRes = list()
 ps_scores_all = list()
 
 for i in range(nIters):
+    print(f'starting iter no. {i}')
     dataRes.append(list())
     ps_scores_all.append(list())
     for dataSetIdx, datasetNum in enumerate(datasetNums):
@@ -40,7 +41,7 @@ for i in range(nIters):
         X, T, Y = read_csv_data(datasetNum)
         scaler, X_train_scaled, X_test_scaled, X_train, T_train, Y_train, T_test, Y_test = create_sets(X, T, Y)
 
-        ########################################## IPW #######################################################
+        ########################################## IPW ############################################################
         if enable_IPW:
             mu_ATT_IPW, ps_scores = calc_ATT_IPW(X_train_scaled, T_train, Y_train, X_test_scaled, T_test, Y_test, datasetNum, scaler, X, T, Y, lowPsTh)
             dataRes[i][dataSetIdx].append(mu_ATT_IPW)
@@ -61,13 +62,17 @@ for i in range(nIters):
             dataRes[i][dataSetIdx].append(mu_ATT_tLearner)
             print(f'dataset{datasetNum}: t-Learner: {mu_ATT_tLearner}')
 
-        ########################################## matching #######################################################
+        ########################################## matching ########################################################
         if enableMatching:
-            mu_ATT_matching = calc_ATT_matching(datasetNum, scaler, X, T, Y, matchingMahalanobisThr)
+            if i == 0:
+                mu_ATT_matching = calc_ATT_matching(datasetNum, scaler, X, T, Y, matchingMahalanobisThr)
+            else: # matching is deterministic
+                mu_ATT_matching = dataRes[0][dataSetIdx][3]
+
             dataRes[i][dataSetIdx].append(mu_ATT_matching)
             print(f'dataset{datasetNum}: matching: {mu_ATT_matching}')
 
-        ########################################## final estimate #######################################################
+        ########################################## final estimate ###################################################
         if datasetNum == 1:
             mu_ATT_final = 0
         elif datasetNum == 2:
@@ -95,6 +100,8 @@ bestIPWIdx = np.zeros(len(datasetNums))
 for dataSetIdx, datasetNum in enumerate(datasetNums):
     bestIPWIdx[dataSetIdx] = indexClosestToMedian[dataSetIdx, 0]
 
+resultsDict = {'results': results, 'medianResults': medianResults, 'stdResults': stdResults, 'indexClosestToMedian': indexClosestToMedian, 'bestIPWIdx': bestIPWIdx}
+pickle.dump(resultsDict, open('./resultsDict', "wb"))
 
 ATT_res = {'Type': [1, 2, 3, 4, 5],
         'data1': medianResults[0],
