@@ -100,6 +100,10 @@ bestIPWIdx = np.zeros(len(datasetNums))
 for dataSetIdx, datasetNum in enumerate(datasetNums):
     bestIPWIdx[dataSetIdx] = indexClosestToMedian[dataSetIdx, 0]
 
+# add my estimation - I most trust the t-learner. I will weight the results [0.2, 0.2, 0.4, 0.2]
+for dataSetIdx, datasetNum in enumerate(datasetNums):
+    medianResults[dataSetIdx, -1] = 0.2*medianResults[dataSetIdx, 0] + 0.2*medianResults[dataSetIdx, 1] + 0.4*medianResults[dataSetIdx, 2] + 0.2*medianResults[dataSetIdx, 3]
+
 resultsDict = {'results': results, 'medianResults': medianResults, 'stdResults': stdResults, 'indexClosestToMedian': indexClosestToMedian, 'bestIPWIdx': bestIPWIdx}
 pickle.dump(resultsDict, open('./resultsDict', "wb"))
 
@@ -107,7 +111,7 @@ ATT_res = {'Type': [1, 2, 3, 4, 5],
         'data1': medianResults[0],
         'data2': medianResults[1]}
 df = pd.DataFrame(ATT_res, columns=['Type', 'data1', 'data2'])
-df.to_csv (r'./ATT_results.csv', index=None, header=True) #Don't forget to add '.csv' at the end of the path
+df.to_csv (r'./ATT_results.csv', index=None, header=True)  #Don't forget to add '.csv' at the end of the path
 
 with open("./models_propensity.csv", "w") as fp:
     wr = csv.writer(fp, dialect='excel')
